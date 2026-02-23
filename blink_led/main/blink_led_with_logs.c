@@ -10,7 +10,7 @@
 
 static const char *TAG = "Logging";
 
-static uint8_t led_level = 0;
+static uint8_t led_level = 0;  // 1  byte - 8 bits (0-255)
 static uint8_t count = 0;
 
 esp_err_t init_led(void)
@@ -32,6 +32,7 @@ esp_err_t blink_led(void)
 {
     led_level = !led_level;
     ESP_LOGD(TAG, "Debug: toggling LED, next level=%u", led_level);
+    ESP_LOGI(TAG, "LED VALUD CHANGED");
     return gpio_set_level(LED1, led_level);
 }
 
@@ -41,7 +42,7 @@ void app_main(void)
     // ESP_LOG_WARN    -> W y E
     // ESP_LOG_INFO    -> I, W y E
     // ESP_LOG_DEBUG   -> D, I, W y E
-    esp_log_level_set(TAG, ESP_LOG_DEBUG);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
 
     ESP_ERROR_CHECK(init_led());
 
@@ -58,11 +59,11 @@ void app_main(void)
         ESP_LOGD(TAG, "Debug: count=%u (raw)", count);
 
         if (count < 10) {
-            ESP_LOGI(TAG, "Value: %u", count);
+            ESP_LOGI(TAG, "Value: %u , Led Level: %u ", count, led_level);
         } else if (count < 20) {
-            ESP_LOGW(TAG, "Value: %u", count);
+            ESP_LOGW(TAG, "Value: %u , Led Level: %u ", count, led_level);
         } else {
-            ESP_LOGE(TAG, "Value: %u", count);
+            ESP_LOGE(TAG, "Value: %u , Led Level: %u ", count, led_level);
         }
     }
 }
