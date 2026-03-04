@@ -1,18 +1,16 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_check.h"
 #include "esp_private/esp_clk.h"
-
 #include "driver/gpio.h"
 #include "driver/pulse_cnt.h"
 
-static const char *TAG = "ENC_X4";
+static const char *TAG = "ENCODER x4";
 
-// ===================== CONFIGURACIÓN =====================
+// Parámetros de configuración
 #define ENC_A_GPIO 25
 #define ENC_B_GPIO 33
 
@@ -95,17 +93,17 @@ static esp_err_t pcnt_qdec_init(pcnt_qdec_t *q)
     ESP_RETURN_ON_ERROR(pcnt_unit_set_glitch_filter(q->unit, &flt), TAG, "set_glitch");
 
     // 3) Definir qué GPIO usa cada canal
-#if ENC_SWAP_AB
-    const int A_EDGE = ENC_B_GPIO;  // Canal A contará flancos de B
-    const int A_LVL  = ENC_A_GPIO;  // y mirará nivel de A
-    const int B_EDGE = ENC_A_GPIO;  // Canal B contará flancos de A
-    const int B_LVL  = ENC_B_GPIO;  // y mirará nivel de B
-#else
-    const int A_EDGE = ENC_A_GPIO;  // Canal A: flancos de A
-    const int A_LVL  = ENC_B_GPIO;  // mira nivel de B
-    const int B_EDGE = ENC_B_GPIO;  // Canal B: flancos de B
-    const int B_LVL  = ENC_A_GPIO;  // mira nivel de A
-#endif
+    #if ENC_SWAP_AB
+        const int A_EDGE = ENC_B_GPIO;  // Canal A contará flancos de B
+        const int A_LVL  = ENC_A_GPIO;  // y mirará nivel de A
+        const int B_EDGE = ENC_A_GPIO;  // Canal B contará flancos de A
+        const int B_LVL  = ENC_B_GPIO;  // y mirará nivel de B
+    #else
+        const int A_EDGE = ENC_A_GPIO;  // Canal A: flancos de A
+        const int A_LVL  = ENC_B_GPIO;  // mira nivel de B
+        const int B_EDGE = ENC_B_GPIO;  // Canal B: flancos de B
+        const int B_LVL  = ENC_A_GPIO;  // mira nivel de A
+    #endif
 
     // 4) Crear canal A
     pcnt_chan_config_t chA_cfg = {
