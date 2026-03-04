@@ -22,8 +22,6 @@ void rls2_reset(rls2_t *r, float p0)
 
 void rls2_update(rls2_t *r, float x0, float x1, float y)
 {
-    // phi = [x0, x1]
-    // K = P*phi / (lambda + phi^T*P*phi)
     float Pphi0 = r->P00 * x0 + r->P01 * x1;
     float Pphi1 = r->P10 * x0 + r->P11 * x1;
 
@@ -33,16 +31,12 @@ void rls2_update(rls2_t *r, float x0, float x1, float y)
     float K0 = Pphi0 / denom;
     float K1 = Pphi1 / denom;
 
-    // e = y - phi^T*theta
     float yhat = x0 * r->theta0 + x1 * r->theta1;
     float e = y - yhat;
 
-    // theta = theta + K*e
     r->theta0 += K0 * e;
     r->theta1 += K1 * e;
 
-    // P = (1/lambda) * (P - K*(phi^T*P))
-    // phi^T*P = [x0 x1]*P
     float phiTP0 = x0 * r->P00 + x1 * r->P10;
     float phiTP1 = x0 * r->P01 + x1 * r->P11;
 

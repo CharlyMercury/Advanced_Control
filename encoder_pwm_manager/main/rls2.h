@@ -2,14 +2,10 @@
 #include <stdint.h>
 
 typedef struct {
-    // theta = [a0, a1] en y = a0*x0 + a1*x1
     float theta0;
     float theta1;
-
-    // P (2x2)
     float P00, P01, P10, P11;
-
-    float lambda;   // factor de olvido (0.98..1.0)
+    float lambda;
 } rls2_t;
 
 void rls2_init(rls2_t *r, float lambda, float p0);

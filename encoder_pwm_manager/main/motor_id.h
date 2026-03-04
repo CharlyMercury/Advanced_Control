@@ -1,20 +1,16 @@
-#pragma once
 #include <stdint.h>
 #include "esp_err.h"
 
 typedef struct {
-    // estimación discreta: w[k+1] = alpha*w[k] + beta*u[k]
     float alpha;
     float beta;
 
-    // equivalente continuo: wdot = -a*w + b*u
-    float a;      // [1/s]
-    float b;      // [rad/s^2] por unidad de u (PWM)
-    float tau;    // [s]
-    float K;      // [rad/s] por unidad de u
+    float a;
+    float b;
+    float tau;
+    float K;
 
-    // info
-    float Ts;     // [s]
+    float Ts;
     uint32_t Ts_ms;
 } motor_id_params_t;
 

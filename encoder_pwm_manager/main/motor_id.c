@@ -15,12 +15,10 @@ struct motor_id {
     float Ts;
     uint32_t Ts_ms;
 
-    // estado previo (k)
     float w_k;
     float u_k;
     int have_prev;
 
-    // parámetros derivados
     motor_id_params_t p;
 };
 
@@ -33,17 +31,11 @@ static float clampf(float v, float lo, float hi)
 
 static void derive_params(struct motor_id *id)
 {
-    // En este estimador:
-    // w[k+1] = alpha*w[k] + beta*u[k]
     float alpha = id->rls.theta0;
     float beta  = id->rls.theta1;
 
-    // alpha debería estar (0,1) para sistema estable (motor)
     alpha = clampf(alpha, 0.001f, 0.9999f);
 
-    // Equivalente continuo (ZOH):
-    // alpha = exp(-a*Ts) => a = -ln(alpha)/Ts
-    // beta  = (b/a)*(1-alpha) => b = a*beta/(1-alpha)
     float Ts = id->Ts;
     float a = -logf(alpha) / Ts;
 
@@ -55,7 +47,7 @@ static void derive_params(struct motor_id *id)
     float b = a * beta / one_minus_alpha;
 
     float tau = (a > 1e-6f) ? (1.0f / a) : 1e6f;
-    float K = b / a; // = beta/(1-alpha)
+    float K = b / a;
 
     id->p.alpha = alpha;
     id->p.beta  = beta;
@@ -75,12 +67,10 @@ esp_err_t motor_id_init(motor_id_t **out, uint32_t Ts_ms, float lambda, float p0
     id->Ts_ms = Ts_ms;
     id->Ts = ((float)Ts_ms) / 1000.0f;
 
-    // RLS para: w[k+1] = alpha*w[k] + beta*u[k]
     rls2_init(&id->rls, lambda, p0);
 
     id->have_prev = 0;
 
-    // init params (solo para no imprimir basura al inicio)
     id->p.Ts = id->Ts;
     id->p.Ts_ms = Ts_ms;
     id->p.alpha = 0.9f;
@@ -108,7 +98,6 @@ void motor_id_update(motor_id_t *base, float u_cmd, float omega_rad_s)
     struct motor_id *id = (struct motor_id *)base;
     if (!id) return;
 
-    // Necesitamos dos muestras (k y k+1)
     if (!id->have_prev) {
         id->w_k = omega_rad_s;
         id->u_k = u_cmd;
@@ -116,19 +105,15 @@ void motor_id_update(motor_id_t *base, float u_cmd, float omega_rad_s)
         return;
     }
 
-    // Datos:
-    // x0 = w[k], x1 = u[k], y = w[k+1]
     float x0 = id->w_k;
     float x1 = id->u_k;
     float y  = omega_rad_s;
 
-    // Evitar actualizar con “nada pasando” (mejora convergencia)
     if (fabsf(x1) > 0.02f || fabsf(x0) > 0.2f || fabsf(y) > 0.2f) {
         rls2_update(&id->rls, x0, x1, y);
         derive_params(id);
     }
 
-    // Actualizar estado previo para el siguiente paso
     id->w_k = omega_rad_s;
     id->u_k = u_cmd;
 }

@@ -3,18 +3,15 @@
 
 static uint32_t lfsr_step(uint32_t x)
 {
-    // LFSR 32-bit (polinomio típico); suficiente para PRBS
-    // taps: 32, 22, 2, 1 (variantes existen; esta funciona bien)
     uint32_t lsb = x & 1u;
     x >>= 1;
     if (lsb) x ^= 0x80200003u;
-    return x ? x : 0xABCDEu; // evitar quedar en 0
+    return x ? x : 0xABCDEu;
 }
 
 static float rand01(excitation_prbs_t *e)
 {
     e->lfsr = lfsr_step(e->lfsr);
-    // 24 bits -> [0,1)
     return (float)(e->lfsr & 0x00FFFFFFu) / (float)0x01000000u;
 }
 
@@ -53,7 +50,6 @@ void excitation_prbs_init(
     e->n_levels = n_levels;
     for (int i = 0; i < n_levels; i++) {
         float v = levels[i];
-        // Fuerza niveles >= u_dead + margen
         if (v < (u_dead + 0.02f)) v = u_dead + 0.02f;
         if (v > 1.0f) v = 1.0f;
         e->u_levels[i] = v;
@@ -72,16 +68,13 @@ float excitation_prbs_step(excitation_prbs_t *e)
         return e->current_u;
     }
 
-    // Elegir nuevo hold
     e->hold_left = rand_range(e, e->hold_min, e->hold_max);
 
-    // Con prob p_zero: 0 (útil para estimar la dinámica de decaimiento "a")
     if (rand01(e) < e->p_zero) {
         e->current_u = 0.0f;
         return e->current_u;
     }
 
-    // Elegir nivel (magnitud)
     int idx = 0;
     if (e->n_levels > 1) {
         float r = rand01(e);
@@ -90,8 +83,6 @@ float excitation_prbs_step(excitation_prbs_t *e)
     }
     float mag = e->u_levels[idx];
 
-    // Elegir signo (para PE más rica)
-    // Si no quieres reversa, aquí pon siempre +1
     float sign = (rand01(e) < 0.5f) ? 1.0f : -1.0f;
 
     e->current_u = sign * mag;
