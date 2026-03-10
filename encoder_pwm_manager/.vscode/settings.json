@@ -5,7 +5,7 @@
     "target/esp32.cfg"
   ],
   "idf.port": "/dev/tty.usbserial-0001",
-  "idf.currentSetup": "/Users/carlosantoniotovargarcia/.espressif/v5.5.2/esp-idf",
+  "idf.currentSetup": "C:\\esp\\v5.5.2\\esp-idf",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
   },
@@ -15,5 +15,6 @@
     "--query-driver=**",
     "--compile-commands-dir=/Users/carlosantoniotovargarcia/projects/sandbox/advanced_control/Advanced_Control/encoder_pwm_manager/build"
   ],
-  "idf.flashType": "UART"
+  "idf.flashType": "UART",
+  "idf.portWin": "COM3"
 }

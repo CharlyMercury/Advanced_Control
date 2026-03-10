@@ -4,10 +4,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include <stdio.h>
 
 struct motor_id {
     rls2_t rls;
@@ -18,6 +15,11 @@ struct motor_id {
     float w_k;
     float u_k;
     int have_prev;
+
+    motor_id_sample_t *samples;
+    size_t sample_count;
+    size_t sample_capacity;
+    uint32_t sample_index;
 
     motor_id_params_t p;
 };
@@ -45,7 +47,6 @@ static void derive_params(struct motor_id *id)
     }
 
     float b = a * beta / one_minus_alpha;
-
     float tau = (a > 1e-6f) ? (1.0f / a) : 1e6f;
     float K = b / a;
 
@@ -55,9 +56,34 @@ static void derive_params(struct motor_id *id)
     id->p.b     = b;
     id->p.tau   = tau;
     id->p.K     = K;
+    id->p.offline_samples = id->sample_count;
+    id->p.offline_capacity = id->sample_capacity;
 }
 
-esp_err_t motor_id_init(motor_id_t **out, uint32_t Ts_ms, float lambda, float p0)
+static void store_sample(struct motor_id *id, float x0, float x1, float y)
+{
+    if (id->samples && id->sample_count < id->sample_capacity) {
+        motor_id_sample_t *s = &id->samples[id->sample_count++];
+
+        s->k = id->sample_index;
+        s->t_s = ((float)id->sample_index) * id->Ts;
+        s->phi0 = x0;
+        s->phi1 = x1;
+        s->y = y;
+
+        id->p.offline_samples = id->sample_count;
+    }
+
+    id->sample_index++;
+}
+
+esp_err_t motor_id_init(
+    motor_id_t **out,
+    uint32_t Ts_ms,
+    float lambda,
+    float p0,
+    size_t offline_capacity
+)
 {
     if (!out || Ts_ms == 0) return ESP_ERR_INVALID_ARG;
 
@@ -66,6 +92,15 @@ esp_err_t motor_id_init(motor_id_t **out, uint32_t Ts_ms, float lambda, float p0
 
     id->Ts_ms = Ts_ms;
     id->Ts = ((float)Ts_ms) / 1000.0f;
+
+    if (offline_capacity > 0) {
+        id->samples = (motor_id_sample_t *)calloc(offline_capacity, sizeof(motor_id_sample_t));
+        if (!id->samples) {
+            free(id);
+            return ESP_ERR_NO_MEM;
+        }
+        id->sample_capacity = offline_capacity;
+    }
 
     rls2_init(&id->rls, lambda, p0);
 
@@ -79,6 +114,8 @@ esp_err_t motor_id_init(motor_id_t **out, uint32_t Ts_ms, float lambda, float p0
     id->p.b     = 0.0f;
     id->p.tau   = 1.0f;
     id->p.K     = 0.0f;
+    id->p.offline_samples = 0;
+    id->p.offline_capacity = id->sample_capacity;
 
     *out = (motor_id_t *)id;
     return ESP_OK;
@@ -90,7 +127,15 @@ void motor_id_reset(motor_id_t *base, float p0)
     if (!id) return;
 
     rls2_reset(&id->rls, p0);
+
     id->have_prev = 0;
+    id->w_k = 0.0f;
+    id->u_k = 0.0f;
+
+    id->sample_count = 0;
+    id->sample_index = 0;
+
+    id->p.offline_samples = 0;
 }
 
 void motor_id_update(motor_id_t *base, float u_cmd, float omega_rad_s)
@@ -109,6 +154,8 @@ void motor_id_update(motor_id_t *base, float u_cmd, float omega_rad_s)
     float x1 = id->u_k;
     float y  = omega_rad_s;
 
+    store_sample(id, x0, x1, y);
+
     if (fabsf(x1) > 0.02f || fabsf(x0) > 0.2f || fabsf(y) > 0.2f) {
         rls2_update(&id->rls, x0, x1, y);
         derive_params(id);
@@ -123,4 +170,55 @@ void motor_id_get(motor_id_t *base, motor_id_params_t *out)
     struct motor_id *id = (struct motor_id *)base;
     if (!id || !out) return;
     *out = id->p;
+}
+
+size_t motor_id_get_sample_count(motor_id_t *base)
+{
+    struct motor_id *id = (struct motor_id *)base;
+    if (!id) return 0;
+    return id->sample_count;
+}
+
+esp_err_t motor_id_get_sample(motor_id_t *base, size_t index, motor_id_sample_t *out)
+{
+    struct motor_id *id = (struct motor_id *)base;
+    if (!id || !out) return ESP_ERR_INVALID_ARG;
+    if (index >= id->sample_count) return ESP_ERR_INVALID_ARG;
+
+    *out = id->samples[index];
+    return ESP_OK;
+}
+
+void motor_id_clear_samples(motor_id_t *base)
+{
+    struct motor_id *id = (struct motor_id *)base;
+    if (!id) return;
+
+    id->sample_count = 0;
+    id->sample_index = 0;
+    id->p.offline_samples = 0;
+}
+
+void motor_id_dump_csv(motor_id_t *base)
+{
+    struct motor_id *id = (struct motor_id *)base;
+    if (!id) return;
+
+    printf("BEGIN_OFFLINE_ID_DATA\n");
+    printf("# Ts_s,%.6f\n", (double)id->Ts);
+    printf("# model,omega_k1 = alpha*omega_k + beta*u_k\n");
+    printf("# columns,k,t_s,phi0_omega_k,phi1_u_k,y_omega_k1\n");
+    printf("k,t_s,phi0_omega_k,phi1_u_k,y_omega_k1\n");
+
+    for (size_t i = 0; i < id->sample_count; i++) {
+        const motor_id_sample_t *s = &id->samples[i];
+        printf("%lu,%.6f,%.8f,%.8f,%.8f\n",
+               (unsigned long)s->k,
+               (double)s->t_s,
+               (double)s->phi0,
+               (double)s->phi1,
+               (double)s->y);
+    }
+
+    printf("END_OFFLINE_ID_DATA\n");
 }

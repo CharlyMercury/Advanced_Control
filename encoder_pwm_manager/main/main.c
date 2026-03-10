@@ -6,10 +6,7 @@
 #include "encoder_pcnt.h"
 #include "motor_l298.h"
 #include "motor_id.h"
-
 #include "excitation_prbs.h"
-
-static const char *TAG = "APP";
 
 #define ENC_A_GPIO      33
 #define ENC_B_GPIO      25
@@ -25,7 +22,9 @@ static const char *TAG = "APP";
 #define RLS_LAMBDA      0.995f
 #define RLS_P0          500.0f
 
-#define U_DEAD          0.50f
+#define U_DEAD                  0.50f
+#define OFFLINE_MAX_SAMPLES     2500
+#define OFFLINE_TARGET_SAMPLES  1500
 
 static float slew_limit(float u_prev, float u_target, float du_max)
 {
@@ -40,7 +39,7 @@ static void identification_task(void *arg)
     (void)arg;
 
     motor_id_t *id = NULL;
-    ESP_ERROR_CHECK(motor_id_init(&id, TS_MS, RLS_LAMBDA, RLS_P0));
+    ESP_ERROR_CHECK(motor_id_init(&id, TS_MS, RLS_LAMBDA, RLS_P0, OFFLINE_MAX_SAMPLES));
 
     const float levels[] = { 0.55f, 0.70f, 0.85f };
 
@@ -60,17 +59,24 @@ static void identification_task(void *arg)
 
     float u_cmd = 0.0f;
     float u_target = 0.0f;
-
     const float DU_MAX = 0.04f;
 
-    ESP_LOGI(TAG, "PE excitation ON. deadzone=%.2f, levels=[0.55 0.70 0.85], p_zero=0.20", (double)U_DEAD);
+    size_t printed_samples = 0;
+    int finished = 0;
+
+    /* Encabezado CSV: solo variables del estimador */
+    printf("phi0_omega_k,phi1_u_k,y_omega_k1\n");
 
     while (1) {
         vTaskDelayUntil(&last, pdMS_TO_TICKS(TS_MS));
 
-        u_target = excitation_prbs_step(&ex);
-
-        u_cmd = slew_limit(u_cmd, u_target, DU_MAX);
+        if (!finished) {
+            u_target = excitation_prbs_step(&ex);
+            u_cmd = slew_limit(u_cmd, u_target, DU_MAX);
+        } else {
+            u_target = 0.0f;
+            u_cmd = 0.0f;
+        }
 
         ESP_ERROR_CHECK(motor_l298_set(u_cmd));
 
@@ -79,28 +85,31 @@ static void identification_task(void *arg)
 
         motor_id_update(id, u_cmd, d.rad_s);
 
-        static uint32_t acc = 0;
-        acc += TS_MS;
-        if (acc >= 200) {
-            acc = 0;
+        /* Imprimir únicamente las muestras usadas por el estimador */
+        size_t n = motor_id_get_sample_count(id);
+        while (printed_samples < n) {
+            motor_id_sample_t s;
+            if (motor_id_get_sample(id, printed_samples, &s) == ESP_OK) {
+                printf("%.8f,%.8f,%.8f\n",
+                       (double)s.phi0,
+                       (double)s.phi1,
+                       (double)s.y);
+            }
+            printed_samples++;
+        }
 
-            motor_id_params_t p;
-            motor_id_get(id, &p);
-
-            ESP_LOGI(TAG,
-                "u=%.2f w=%.2f rad/s | alpha=%.4f beta=%.4f | a=%.3f 1/s tau=%.3fs | K=%.2f rad/s/u",
-                (double)u_cmd, (double)d.rad_s,
-                (double)p.alpha, (double)p.beta,
-                (double)p.a, (double)p.tau, (double)p.K
-            );
+        if (!finished && n >= OFFLINE_TARGET_SAMPLES) {
+            finished = 1;
+            ESP_ERROR_CHECK(motor_l298_set(0.0f));
+            vTaskDelete(NULL);
         }
     }
 }
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "Init: ENC A=%d B=%d | L298 IN1=%d IN2=%d ENA=%d",
-             ENC_A_GPIO, ENC_B_GPIO, L298_IN1_GPIO, L298_IN2_GPIO, L298_ENA_GPIO);
+    /* Silencia logs de la app; deja solo el printf del CSV */
+    esp_log_level_set("*", ESP_LOG_NONE);
 
     ESP_ERROR_CHECK(encoder_init_pcnt_x4(
         ENC_A_GPIO,
