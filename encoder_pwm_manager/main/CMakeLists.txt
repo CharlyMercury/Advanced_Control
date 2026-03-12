@@ -1,11 +1,11 @@
 idf_component_register(
     SRCS
-        "main.c"
         "encoder_pcnt.c"
         "excitation_prbs.c"
         "motor_l298.c"
         "rls2.c"
         "motor_id.c"
+        "main"
     INCLUDE_DIRS
         "."
 )
