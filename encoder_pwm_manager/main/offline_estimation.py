@@ -3,25 +3,15 @@ import sys
 import numpy as np
 import pandas as pd
 
-
-DEFAULT_TS = 0.02  # 20 ms
+DEFAULT_TS = 0.02
 
 
 def load_dataset(path: str) -> pd.DataFrame:
-    """
-    Reads a serial log file and extracts only the CSV table.
-
-    Supported headers:
-        phi0_omega_k,phi1_u_k,phi2_bias,y_omega_k1
-        phi0_omega_k,phi1_u_k,y_omega_k1   (legacy format)
-
-    Any garbage text before/after the CSV is ignored.
-    """
     text = open(path, "r", encoding="utf-8", errors="ignore").read()
     lines = text.splitlines()
 
-    new_header = "phi0_omega_k,phi1_u_k,phi2_bias,y_omega_k1"
-    old_header = "phi0_omega_k,phi1_u_k,y_omega_k1"
+    new_header = "phi0_omega_k,phi1_u_eff_k,phi2_bias,y_omega_k1"
+    legacy_header = "phi0_omega_k,phi1_u_k,phi2_bias,y_omega_k1"
 
     start_idx = None
     detected_header = None
@@ -32,21 +22,20 @@ def load_dataset(path: str) -> pd.DataFrame:
             start_idx = i
             detected_header = new_header
             break
-        if s == old_header:
+        if s == legacy_header:
             start_idx = i
-            detected_header = old_header
+            detected_header = legacy_header
             break
 
     if start_idx is None:
         raise ValueError(
             "Expected CSV header not found. Supported headers are:\n"
             f"  '{new_header}'\n"
-            f"  '{old_header}'"
+            f"  '{legacy_header}'"
         )
 
     csv_lines = [detected_header]
-
-    expected_cols = 4 if detected_header == new_header else 3
+    expected_cols = 4
 
     for line in lines[start_idx + 1:]:
         s = line.strip()
@@ -68,25 +57,22 @@ def load_dataset(path: str) -> pd.DataFrame:
 
     df = pd.read_csv(io.StringIO("\n".join(csv_lines)))
 
+    if "phi1_u_eff_k" not in df.columns:
+        if "phi1_u_k" in df.columns:
+            df["phi1_u_eff_k"] = df["phi1_u_k"]
+        else:
+            raise ValueError("Input column not found.")
+
     if "phi2_bias" not in df.columns:
         df["phi2_bias"] = 1.0
 
-    df = df[["phi0_omega_k", "phi1_u_k", "phi2_bias", "y_omega_k1"]]
+    df = df[["phi0_omega_k", "phi1_u_eff_k", "phi2_bias", "y_omega_k1"]]
 
     return df
 
 
 def estimate_parameters(df: pd.DataFrame, Ts: float) -> None:
-    """
-    Estimates the discrete-time model:
-
-        omega[k+1] = alpha * omega[k] + beta * u[k] + gamma
-
-    and recovers the continuous-time parameters of:
-
-        dot(omega) + a * omega = b * u + c
-    """
-    Phi = df[["phi0_omega_k", "phi1_u_k", "phi2_bias"]].to_numpy(dtype=float)
+    Phi = df[["phi0_omega_k", "phi1_u_eff_k", "phi2_bias"]].to_numpy(dtype=float)
     Y = df["y_omega_k1"].to_numpy(dtype=float)
 
     if len(Phi) < 5:
@@ -134,7 +120,7 @@ def estimate_parameters(df: pd.DataFrame, Ts: float) -> None:
 
     tau_hat = 1.0 / a_hat
     K_hat = b_hat / a_hat
-    d_hat = c_hat / a_hat 
+    d_hat = c_hat / a_hat
 
     print("=== Estimated continuous parameters ===")
     print(f"Ts       = {Ts:.6f} s")
@@ -142,16 +128,16 @@ def estimate_parameters(df: pd.DataFrame, Ts: float) -> None:
     print(f"b_hat    = {b_hat:.8f}")
     print(f"c_hat    = {c_hat:.8f}")
     print(f"tau_hat  = {tau_hat:.8f} s")
-    print(f"K_hat    = {K_hat:.8f} rad/s/u")
+    print(f"K_hat    = {K_hat:.8f} rad/s/u_eff")
     print(f"d_hat    = {d_hat:.8f} rad/s")
     print()
 
     print("=== Model summary ===")
     print("Discrete:")
-    print(f"  omega[k+1] = {alpha_hat:.8f} * omega[k] + {beta_hat:.8f} * u[k] + {gamma_hat:.8f}")
+    print(f"  omega[k+1] = {alpha_hat:.8f} * omega[k] + {beta_hat:.8f} * u_eff[k] + {gamma_hat:.8f}")
     print()
     print("Continuous:")
-    print(f"  dot(omega) + {a_hat:.8f} * omega = {b_hat:.8f} * u + {c_hat:.8f}")
+    print(f"  dot(omega) + {a_hat:.8f} * omega = {b_hat:.8f} * u_eff + {c_hat:.8f}")
 
 
 def main():
