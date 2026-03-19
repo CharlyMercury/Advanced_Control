@@ -1,3 +1,4 @@
 {
-    "idf.currentSetup": "C:\\esp\\v5.5.2\\esp-idf"
+    "idf.currentSetup": "C:\\esp\\v5.5.2\\esp-idf",
+    "cmake.sourceDirectory": "C:/Users/ctova/projects/sandbox/control_avanzado/angular_velocity_data"
 }
