@@ -2,3 +2,5 @@
 .devcontainer
 .vscode
 
+*.png
+*.csv
