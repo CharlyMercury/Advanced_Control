@@ -51,7 +51,7 @@
 #define MOTOR_CMD_SIGN          -1.0f
 
 /* Si el encoder reporta signo invertido, cambia a -1.0f */
-#define ENCODER_SIGN            1.0f
+#define ENCODER_SIGN            -1.0f
 
 static const char *TAG = "VEL_CTRL";
 
