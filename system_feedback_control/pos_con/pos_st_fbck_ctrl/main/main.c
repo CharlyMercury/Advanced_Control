@@ -13,9 +13,7 @@
 #include "encoder_pcnt.h"
 #include "motor_l298.h"
 
-/* =========================================================
- * Hardware (manteniendo exactamente tus pines)
- * ========================================================= */
+// Pinout
 #define ENC_A_GPIO              33
 #define ENC_B_GPIO              25
 #define L298_IN1_GPIO           32
@@ -29,7 +27,6 @@
 
 /* =========================================================
  * Modelo
- *
  * x1_dot = x2
  * x2_dot = -a*x2 + b*u + c
  * ========================================================= */
@@ -37,40 +34,27 @@
 #define MODEL_B                 25.0f
 #define MODEL_C                 0.0f
 
-/* =========================================================
- * Ganancias del control
- * u = -k1*e_pos - k2*e_vel
- * ========================================================= */
+// Ganancias del control
 #define K1_POS                  2.0f
 #define K2_VEL                  0.20f
 
-/* =========================================================
- * Ganancias del observador
- * ========================================================= */
+// Ganancias del observador
 #define L1_OBS                  20.0f
 #define L2_OBS                  120.0f
 
-/* =========================================================
- * Referencia
- * ========================================================= */
+// Referencia
 #define POS_REF_RAD             1.0f
 
-/* =========================================================
- * Signos
- * ========================================================= */
+// Signos
 #define MOTOR_CMD_SIGN          1.0f
 #define ENCODER_SIGN           -1.0f
 
-/* =========================================================
- * Condición de paro
- * ========================================================= */
+// Condición de reinicio
 #define POS_EPS_RAD             0.03f
 #define VEL_EPS_RAD_S           0.20f
 
-/* =========================================================
- * Umbral para evitar reenviar exactamente el mismo comando
- * y disparar logs/acciones innecesarias en el driver
- * ========================================================= */
+// Umbral para evitar reenviar exactamente el mismo comando
+// y disparar logs/acciones innecesarias en el driver
 #define CMD_EPS                 0.0005f
 
 typedef struct {
@@ -193,25 +177,20 @@ static void control_task(void *arg)
     float e_pos = 0.0f;
     float e_vel = 0.0f;
     float u = 0.0f;
-    float u_applied = 999.0f; /* valor imposible para forzar primera escritura */
+    float u_applied = 999.0f;
 
     observer_init(&obs, 0.0f, 0.0f);
 
-    /* Espera corta para estabilizar periféricos */
     vTaskDelay(pdMS_TO_TICKS(300));
 
-    /* Tomar cero relativo del encoder */
     encoder_get_data(&enc_zero);
 
-    /* Cabecera CSV */
     print_csv_header();
 
     while (1) {
         vTaskDelayUntil(&last, pdMS_TO_TICKS(TS_MS));
 
-        /* -------------------------------------------------
-         * 1) Lectura del encoder
-         * ------------------------------------------------- */
+        // Lectura del encoder
         encoder_get_data(&enc);
 
         cnt_rel = enc.position_cnt - enc_zero.position_cnt;
@@ -222,15 +201,11 @@ static void control_task(void *arg)
         y_vel = enc.rad_s;
         y_vel *= ENCODER_SIGN;
 
-        /* -------------------------------------------------
-         * 2) Error medido
-         * ------------------------------------------------- */
+        // Error medio
         e_pos = y_pos - ref_pos;
         e_vel = y_vel - ref_vel;
 
-        /* -------------------------------------------------
-         * 3) Control con medición real
-         * ------------------------------------------------- */
+        // Control con mediciones
         u = state_feedback_measured_control(e_pos, e_vel);
 
         if ((fabsf(e_pos) < POS_EPS_RAD) && (fabsf(y_vel) < VEL_EPS_RAD_S)) {
@@ -240,23 +215,16 @@ static void control_task(void *arg)
         u *= MOTOR_CMD_SIGN;
         u = clampf(u, -1.0f, 1.0f);
 
-        /* -------------------------------------------------
-         * 4) Aplicar comando solo si cambió realmente
-         *    para no inundar el driver con STOP repetidos
-         * ------------------------------------------------- */
+        // Evitar reenviar el mismo comando y generar logs innecesarios en el driver
         if (fabsf(u - u_applied) > CMD_EPS) {
             ESP_ERROR_CHECK(motor_l298_set(u));
             u_applied = u;
         }
 
-        /* -------------------------------------------------
-         * 5) Observador separado
-         * ------------------------------------------------- */
+        // Observador separado
         observer_update(&obs, y_pos, u_applied, Ts);
 
-        /* -------------------------------------------------
-         * 6) Salida CSV limpia
-         * ------------------------------------------------- */
+        // Salida CSV limpia
         t_ms = esp_timer_get_time() / 1000LL;
 
         print_csv_row(
