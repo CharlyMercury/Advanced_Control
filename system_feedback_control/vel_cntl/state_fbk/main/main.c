@@ -15,42 +15,20 @@
 #define L298_IN1_GPIO           32
 #define L298_IN2_GPIO           27
 #define L298_ENA_GPIO           26
-
 #define ENCODER_CPR_X4          1976
 #define TS_MS                   20
 #define PWM_FREQ_HZ             20000
-
-/* ---------- Modelo identificado ----------
- * omega_dot = -a*omega + b*u_eff + c
- */
 #define MODEL_A                 11.11281274f
 #define MODEL_B                (-165.65653960f)
 #define MODEL_C                 0.37449236f
-
-/* ---------- Control ----------
- * e = w_ref - w
- * u_eff = (a*w_ref - c + K*e)/b
- */
 #define CTRL_K                  1.0f
-
-/* ---------- Referencia ---------- */
 #define OMEGA_REF_RAD_S         8.0f
-
-/* ---------- Zona muerta ----------
- * Estos son los mismos que usaste en identificación
- */
 #define U_START_POS             0.55f
 #define U_START_NEG             0.55f
-
-/* ---------- Ajustes prácticos ---------- */
 #define OMEGA_LPF_ALPHA         0.85f
 #define OMEGA_STOP_EPS          0.20f
 #define REF_STOP_EPS            0.10f
-
-/* Si el motor gira al revés, cambia a -1.0f */
 #define MOTOR_CMD_SIGN          -1.0f
-
-/* Si el encoder reporta signo invertido, cambia a -1.0f */
 #define ENCODER_SIGN            -1.0f
 
 static const char *TAG = "VEL_CTRL";
@@ -90,18 +68,13 @@ static float effective_input_to_pwm(float u_eff)
     return copysignf(pwm_mag, u_eff);
 }
 
-/**
- * Controlador sobre la entrada efectiva del modelo.
- */
 static float speed_control_u_eff(float omega_ref, float omega_meas)
 {
     const float e = omega_ref - omega_meas;
     float u_eff = ((MODEL_A * omega_ref) - MODEL_C + (CTRL_K * e)) / MODEL_B;
 
-    /* Saturación sobre la entrada efectiva del modelo */
     u_eff = clampf(u_eff, -1.0f, 1.0f);
 
-    /* Evitar manditos pequeños alrededor de cero */
     if ((fabsf(omega_ref) < REF_STOP_EPS) && (fabsf(omega_meas) < OMEGA_STOP_EPS)) {
         u_eff = 0.0f;
     }
@@ -126,7 +99,13 @@ static void velocity_control_task(void *arg)
     float u_eff = 0.0f;
     float pwm_cmd = 0.0f;
 
-    ESP_ERROR_CHECK(motor_l298_set(0.0f));
+    esp_err_t err = motor_l298_set(0.0f);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "motor_l298_set(0.0f) failed: %s", esp_err_to_name(err));
+        vTaskDelete(NULL);
+        return;
+    }
+
     vTaskDelay(pdMS_TO_TICKS(200));
 
     printf("t_s,omega_ref_rad_s,omega_meas_rad_s,omega_filt_rad_s,error_rad_s,u_eff,pwm_cmd,delta_cnt,position_cnt\n");
@@ -137,29 +116,24 @@ static void velocity_control_task(void *arg)
 
         encoder_get_data(&d);
 
-        /* Señal medida */
         omega_meas = ENCODER_SIGN * d.rad_s;
 
-        /* Filtro simple */
         omega_filt = (OMEGA_LPF_ALPHA * omega_filt) +
                      ((1.0f - OMEGA_LPF_ALPHA) * omega_meas);
 
-        /* Referencia constante */
         omega_ref = OMEGA_REF_RAD_S;
 
-        /* Error */
         error = omega_ref - omega_filt;
-
-        /* Control sobre entrada efectiva */
         u_eff = speed_control_u_eff(omega_ref, omega_filt);
-
-        /* Mapear entrada efectiva a PWM real considerando zona muerta */
         pwm_cmd = effective_input_to_pwm(u_eff);
-
-        /* Ajuste opcional de signo del actuador */
         pwm_cmd *= MOTOR_CMD_SIGN;
 
-        ESP_ERROR_CHECK(motor_l298_set(pwm_cmd));
+        err = motor_l298_set(pwm_cmd);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "motor_l298_set(%.6f) failed: %s", (double)pwm_cmd, esp_err_to_name(err));
+            vTaskDelete(NULL);
+            return;
+        }
 
         printf("%.3f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%" PRId32 ",%" PRId64 "\n",
                (double)t_s,
@@ -176,23 +150,32 @@ static void velocity_control_task(void *arg)
 
 void app_main(void)
 {
-    /* Igual que tu código que sí gira */
-    ESP_ERROR_CHECK(encoder_init_pcnt_x4(
+    esp_err_t err;
+
+    err = encoder_init_pcnt_x4(
         ENC_A_GPIO,
         ENC_B_GPIO,
         8000,
         ENCODER_CPR_X4,
         TS_MS
-    ));
+    );
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "encoder_init_pcnt_x4 failed: %s", esp_err_to_name(err));
+        return;
+    }
 
-    ESP_ERROR_CHECK(motor_l298_init(
+    err = motor_l298_init(
         L298_IN1_GPIO,
         L298_IN2_GPIO,
         L298_ENA_GPIO,
         PWM_FREQ_HZ
-    ));
+    );
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "motor_l298_init failed: %s", esp_err_to_name(err));
+        return;
+    }
 
-    xTaskCreate(
+    BaseType_t task_ok = xTaskCreate(
         velocity_control_task,
         "velocity_control_task",
         4096,
@@ -200,4 +183,9 @@ void app_main(void)
         5,
         NULL
     );
+
+    if (task_ok != pdPASS) {
+        ESP_LOGE(TAG, "xTaskCreate failed");
+        return;
+    }
 }

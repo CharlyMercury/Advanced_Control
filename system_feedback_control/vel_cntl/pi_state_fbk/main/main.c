@@ -31,14 +31,15 @@ static const char *TAG = "VEL_PI_STATE";
 #define MODEL_B               (-165.65653960f)
 #define MODEL_C                 0.37449236f
 
-// Ganancias del control
-#define KI_STATE                4.0f
-#define KP_STATE                3.0f
+// Ganancias del control:
+// u = ( -k1*e + k2*integral(e) + c - a*r ) / b
+#define K1_ERR                  5.0f
+#define K2_INT                  10.0f
 
 // Referencia
-#define OMEGA_REF_RAD_S         5.0f
+#define OMEGA_REF_RAD_S         8.0f
 
-//Filtros
+// Filtros
 #define OMEGA_LPF_ALPHA         0.85f
 
 /* Saturación del estado integral */
@@ -63,7 +64,7 @@ static const char *TAG = "VEL_PI_STATE";
  * - ENCODER_SIGN
  * ========================================================= */
 #define MOTOR_CMD_SIGN          1.0f
-#define ENCODER_SIGN            1.0f
+#define ENCODER_SIGN            -1.0f
 
 // Utilerías
 static inline float clampf(float x, float xmin, float xmax)
@@ -95,32 +96,12 @@ static float effective_input_to_pwm(float u_eff)
     }
 
     u0 = (u_eff >= 0.0f) ? U_START_POS : U_START_NEG;
-
     mag = clampf(mag, 0.0f, 1.0f);
-
-    /* Mapeo lineal:
-     * 0..1 en u_eff --> u0..1 en PWM
-     */
     pwm_mag = u0 + (1.0f - u0) * mag;
     pwm_mag = clampf(pwm_mag, 0.0f, 1.0f);
 
     return copysignf(pwm_mag, u_eff);
 }
-
-//  Retrolimentación de estado
-static float control_state_feedback_pi(float omega_ref, float e0, float e1)
-{
-    const float v_ff = ((MODEL_A * omega_ref) - MODEL_C) / MODEL_B;
-    const float k0_bar = KI_STATE / MODEL_B;   /* Ki / b */
-    const float k1_bar = KP_STATE / MODEL_B;   /* Kp / b */
-
-    float v_fb = (k0_bar * e0) + (k1_bar * e1);
-    float v = v_ff + v_fb;
-
-    v = clampf(v, U_EFF_MIN, U_EFF_MAX);
-    return v;
-}
-
 
 // Tarea principal - control
 static void velocity_pi_state_task(void *arg)
@@ -139,19 +120,15 @@ static void velocity_pi_state_task(void *arg)
     float omega_filt = 0.0f;
     float omega_ref  = OMEGA_REF_RAD_S;
 
-    // Inicio de variables de estado
+    // Variables de estado del controlador
     float e0 = 0.0f;   /* integral del error */
     float e1 = 0.0f;   /* error instantáneo */
 
-    // Inicio de valores del control
+    // Variables del control
     float v_ff = 0.0f;
     float v_fb = 0.0f;
     float u_eff = 0.0f;
     float pwm_cmd = 0.0f;
-
-    // Retro de estado escaladas por b
-    const float k0_bar = KI_STATE / MODEL_B;
-    const float k1_bar = KP_STATE / MODEL_B;
 
     ESP_ERROR_CHECK(motor_l298_set(0.0f));
     vTaskDelay(pdMS_TO_TICKS(200));
@@ -171,24 +148,20 @@ static void velocity_pi_state_task(void *arg)
         omega_filt = (OMEGA_LPF_ALPHA * omega_filt) +
                      ((1.0f - OMEGA_LPF_ALPHA) * omega_meas);
 
-
-        // Estado aumentado
+        // Referencia
         omega_ref = OMEGA_REF_RAD_S;
 
         // Estado aumentado
         e1 = omega_ref - omega_filt;
-
-        e0 += Ts * e1;
+        e0 += Ts * e1; // Integral del error
         e0 = clampf(e0, E0_MIN, E0_MAX);
 
         /* -------------------------------------------------
-        Control
-        v_ff = (a*r - c)/b
-        v_fb = (Ki/b)e0 + (Kp/b)e1
-        u_eff = v_ff + v_fb
-        ------------------------------------------------- */
-        v_ff = ((MODEL_A * omega_ref) - MODEL_C) / MODEL_B;
-        v_fb = (k0_bar * e0) + (k1_bar * e1);
+         * Ley de control:
+         * u = ( -k1*e - k2*integral(e) + c - a*r ) / b
+         * ------------------------------------------------- */
+        v_ff = (MODEL_C - (MODEL_A * omega_ref)) / MODEL_B;
+        v_fb = ((-K1_ERR * e1) + (-K2_INT * e0)) / MODEL_B;
 
         u_eff = v_ff + v_fb;
         u_eff = clampf(u_eff, U_EFF_MIN, U_EFF_MAX);
@@ -204,7 +177,7 @@ static void velocity_pi_state_task(void *arg)
             }
         }
 
-        //conversión de uff a pwm
+        // Conversión de u_eff a PWM
         pwm_cmd = effective_input_to_pwm(u_eff);
         pwm_cmd *= MOTOR_CMD_SIGN;
         pwm_cmd = clampf(pwm_cmd, -1.0f, 1.0f);
@@ -230,7 +203,7 @@ static void velocity_pi_state_task(void *arg)
     }
 }
 
-// Main
+// Programa principal
 void app_main(void)
 {
     ESP_LOGI(TAG, "Inicializando encoder...");
