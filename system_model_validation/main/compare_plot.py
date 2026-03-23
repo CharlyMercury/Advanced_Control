@@ -4,11 +4,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-HEADER = "k,t_k1_s,pwm_k,u_eff_k,omega_k_rad_s,omega_k1_rad_s"
+HEADER = "k,t_k1_s,u_eff_k,omega_k_rad_s,omega_k1_rad_s"
 
-A_EST = 1.0
-B_EST = 1.0
-C_EST = 0.0
+A_EST = 11.25657071
+B_EST = 167.16911397
+C_EST = -0.42476213
 
 
 def load_validation_log(path: str) -> pd.DataFrame:
@@ -31,27 +31,34 @@ def load_validation_log(path: str) -> pd.DataFrame:
         )
 
     csv_lines = [HEADER]
-    expected_cols = 6
+    expected_cols = 5
 
     for line in lines[start_idx + 1:]:
         s = line.strip().replace("\ufeff", "")
         if not s:
             continue
 
-        parts = s.split(",")
+        parts = [p.strip() for p in s.split(",")]
         if len(parts) != expected_cols:
             continue
 
         try:
             [float(x) for x in parts]
-            csv_lines.append(s)
+            csv_lines.append(",".join(parts))
         except ValueError:
             continue
 
     if len(csv_lines) <= 1:
         raise ValueError("The header was found, but no valid data rows were found.")
 
-    return pd.read_csv(io.StringIO("\n".join(csv_lines)))
+    df = pd.read_csv(io.StringIO("\n".join(csv_lines)))
+
+    required = ["k", "t_k1_s", "u_eff_k", "omega_k_rad_s", "omega_k1_rad_s"]
+    missing = [col for col in required if col not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+
+    return df
 
 
 def continuous_to_discrete(a: float, b: float, c: float, Ts: float):
@@ -64,7 +71,13 @@ def continuous_to_discrete(a: float, b: float, c: float, Ts: float):
     return alpha, beta, gamma
 
 
-def simulate_model(u_eff_k: np.ndarray, omega_k0: float, alpha: float, beta: float, gamma: float) -> np.ndarray:
+def simulate_model(
+    u_eff_k: np.ndarray,
+    omega_k0: float,
+    alpha: float,
+    beta: float,
+    gamma: float,
+) -> np.ndarray:
     omega_model_k1 = np.zeros_like(u_eff_k, dtype=float)
     omega = float(omega_k0)
 
@@ -85,24 +98,37 @@ def compute_metrics(y_real: np.ndarray, y_model: np.ndarray) -> dict:
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0.0 else np.nan
 
     return {
-        "rmse": rmse,
-        "mae": mae,
-        "r2": r2,
-        "max_abs_err": np.max(np.abs(err)),
+        "rmse": float(rmse),
+        "mae": float(mae),
+        "r2": float(r2),
+        "max_abs_err": float(np.max(np.abs(err))),
     }
 
 
-def plot_compare(t_k1, omega_real_k1, omega_model_k1, title):
+def plot_compare(t_k1, u_eff_k, omega_real_k1, omega_model_k1, title):
     metrics = compute_metrics(omega_real_k1, omega_model_k1)
 
-    plt.figure(figsize=(12, 6))
-    plt.plot(t_k1, omega_real_k1, label="Velocidad real")
-    plt.plot(t_k1, omega_model_k1, label="Velocidad del modelo")
-    plt.xlabel("Tiempo [s]")
-    plt.ylabel("Velocidad [rad/s]")
-    plt.title(title)
-    plt.grid(True)
-    plt.legend()
+    fig, axes = plt.subplots(
+        2,
+        1,
+        figsize=(12, 8),
+        sharex=True,
+        gridspec_kw={"height_ratios": [1, 3]},
+    )
+
+    axes[0].plot(t_k1, u_eff_k, label="u_eff[k]")
+    axes[0].set_ylabel("u_eff")
+    axes[0].set_title("Entrada efectiva del experimento")
+    axes[0].grid(True)
+    axes[0].legend()
+
+    axes[1].plot(t_k1, omega_real_k1, label="Velocidad real")
+    axes[1].plot(t_k1, omega_model_k1, label="Velocidad del modelo")
+    axes[1].set_xlabel("Tiempo [s]")
+    axes[1].set_ylabel("Velocidad [rad/s]")
+    axes[1].set_title(title)
+    axes[1].grid(True)
+    axes[1].legend()
 
     text = (
         f"Muestras: {len(t_k1)}\n"
@@ -111,22 +137,26 @@ def plot_compare(t_k1, omega_real_k1, omega_model_k1, title):
         f"R²: {metrics['r2']:.6f}\n"
         f"Max |error|: {metrics['max_abs_err']:.6f}"
     )
-    plt.gca().text(
+    axes[1].text(
         0.02,
         0.98,
         text,
-        transform=plt.gca().transAxes,
+        transform=axes[1].transAxes,
         verticalalignment="top",
         bbox=dict(boxstyle="round", facecolor="white", alpha=0.85),
     )
 
+    plt.tight_layout()
     plt.show()
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("archivo_log", help="archivo .txt/.log con CSV del experimento")
-    parser.add_argument("--title", default="Comparación: velocidad real vs simulación del modelo")
+    parser.add_argument(
+        "--title",
+        default="Comparación en u_eff: velocidad real vs simulación del modelo",
+    )
     parser.add_argument("--a", type=float, default=A_EST)
     parser.add_argument("--b", type=float, default=B_EST)
     parser.add_argument("--c", type=float, default=C_EST)
@@ -145,6 +175,9 @@ def main():
     alpha, beta, gamma = continuous_to_discrete(args.a, args.b, args.c, Ts)
     omega_model_k1 = simulate_model(u_eff_k, omega_k[0], alpha, beta, gamma)
 
+    print("=== Comparación del modelo trabajando en u_eff ===")
+    print()
+
     print("=== Parámetros continuos ===")
     print(f"a = {args.a:.8f}")
     print(f"b = {args.b:.8f}")
@@ -158,6 +191,11 @@ def main():
     print(f"gamma = {gamma:.8f}")
     print()
 
+    print("=== Rango de entrada efectiva ===")
+    print(f"u_eff min = {np.min(u_eff_k):.6f}")
+    print(f"u_eff max = {np.max(u_eff_k):.6f}")
+    print()
+
     metrics = compute_metrics(omega_real_k1, omega_model_k1)
 
     print("=== Métricas ===")
@@ -168,6 +206,7 @@ def main():
 
     plot_compare(
         t_k1=t_k1,
+        u_eff_k=u_eff_k,
         omega_real_k1=omega_real_k1,
         omega_model_k1=omega_model_k1,
         title=args.title,
