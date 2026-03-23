@@ -30,9 +30,9 @@ EXPECTED_HEADER = (
 
 # Modelo identificado:
 # omega_dot = -a*omega + b*u_eff + c
-MODEL_A = 11.11281274
-MODEL_B = -165.65653960
-MODEL_C = 0.37449236
+MODEL_A = 11.25657071
+MODEL_B = 167.16911397
+MODEL_C = -0.42476213
 
 
 def extract_csv_block(path: Path) -> pd.DataFrame:
@@ -205,10 +205,10 @@ def plot_speed_comparison(df: pd.DataFrame, omega_model: np.ndarray, output_path
     t = df["t_s"].to_numpy(dtype=float)
 
     plt.figure(figsize=(12, 6))
-    plt.plot(t, df["omega_ref_rad_s"], label="omega_ref")
-    plt.plot(t, df["omega_meas_rad_s"], label="omega_meas")
-    plt.plot(t, df["omega_filt_rad_s"], label="omega_filt")
-    plt.plot(t, omega_model, label="omega_model")
+    plt.plot(t, df["omega_ref_rad_s"], label="Velocidad de referencia")
+    plt.plot(t, df["omega_meas_rad_s"], label="Velocidad medida")
+    plt.plot(t, df["omega_filt_rad_s"], label="Velocidad filtrada")
+    plt.plot(t, omega_model, label="Velocidad estimada por el modelo")
     plt.title("Comparativa de velocidades")
     plt.xlabel("Tiempo [s]")
     plt.ylabel("Velocidad [rad/s]")
@@ -223,10 +223,22 @@ def plot_error_comparison(df: pd.DataFrame, omega_model: np.ndarray, output_path
     t = df["t_s"].to_numpy(dtype=float)
 
     plt.figure(figsize=(12, 6))
-    plt.plot(t, df["error_rad_s"], label="error_logged")
-    plt.plot(t, df["omega_ref_rad_s"] - df["omega_meas_rad_s"], label="ref - meas")
-    plt.plot(t, df["omega_ref_rad_s"] - df["omega_filt_rad_s"], label="ref - filt")
-    plt.plot(t, omega_model - df["omega_meas_rad_s"], label="model - meas")
+    plt.plot(t, df["error_rad_s"], label="Error registrado")
+    plt.plot(
+        t,
+        df["omega_ref_rad_s"] - df["omega_meas_rad_s"],
+        label="Error entre referencia y medida",
+    )
+    plt.plot(
+        t,
+        df["omega_ref_rad_s"] - df["omega_filt_rad_s"],
+        label="Error entre referencia y velocidad filtrada",
+    )
+    plt.plot(
+        t,
+        omega_model - df["omega_meas_rad_s"],
+        label="Error entre modelo y medida",
+    )
     plt.title("Comparativa de errores")
     plt.xlabel("Tiempo [s]")
     plt.ylabel("Error [rad/s]")
@@ -241,8 +253,8 @@ def plot_control_comparison(df: pd.DataFrame, output_path: Path) -> None:
     t = df["t_s"].to_numpy(dtype=float)
 
     plt.figure(figsize=(12, 6))
-    plt.plot(t, df["u_eff"], label="u_eff")
-    plt.plot(t, df["pwm_cmd"], label="pwm_cmd")
+    plt.plot(t, df["u_eff"], label="Señal de control efectiva")
+    plt.plot(t, df["pwm_cmd"], label="Comando PWM")
     plt.title("Comparativa de señales de control")
     plt.xlabel("Tiempo [s]")
     plt.ylabel("Comando")
@@ -258,26 +270,38 @@ def plot_all_in_one(df: pd.DataFrame, omega_model: np.ndarray, output_path: Path
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
 
-    axes[0].plot(t, df["omega_ref_rad_s"], label="omega_ref")
-    axes[0].plot(t, df["omega_meas_rad_s"], label="omega_meas")
-    axes[0].plot(t, df["omega_filt_rad_s"], label="omega_filt")
-    axes[0].plot(t, omega_model, label="omega_model")
+    axes[0].plot(t, df["omega_ref_rad_s"], label="Velocidad de referencia")
+    axes[0].plot(t, df["omega_meas_rad_s"], label="Velocidad medida")
+    axes[0].plot(t, df["omega_filt_rad_s"], label="Velocidad filtrada")
+    axes[0].plot(t, omega_model, label="Velocidad estimada por el modelo")
     axes[0].set_title("Comparativa de velocidades")
     axes[0].set_ylabel("Velocidad [rad/s]")
     axes[0].grid(True)
     axes[0].legend()
 
-    axes[1].plot(t, df["error_rad_s"], label="error_logged")
-    axes[1].plot(t, df["omega_ref_rad_s"] - df["omega_meas_rad_s"], label="ref - meas")
-    axes[1].plot(t, df["omega_ref_rad_s"] - df["omega_filt_rad_s"], label="ref - filt")
-    axes[1].plot(t, omega_model - df["omega_meas_rad_s"], label="model - meas")
+    axes[1].plot(t, df["error_rad_s"], label="Error registrado")
+    axes[1].plot(
+        t,
+        df["omega_ref_rad_s"] - df["omega_meas_rad_s"],
+        label="Error entre referencia y medida",
+    )
+    axes[1].plot(
+        t,
+        df["omega_ref_rad_s"] - df["omega_filt_rad_s"],
+        label="Error entre referencia y velocidad filtrada",
+    )
+    axes[1].plot(
+        t,
+        omega_model - df["omega_meas_rad_s"],
+        label="Error entre modelo y medida",
+    )
     axes[1].set_title("Comparativa de errores")
     axes[1].set_ylabel("Error [rad/s]")
     axes[1].grid(True)
     axes[1].legend()
 
-    axes[2].plot(t, df["u_eff"], label="u_eff")
-    axes[2].plot(t, df["pwm_cmd"], label="pwm_cmd")
+    axes[2].plot(t, df["u_eff"], label="Señal de control efectiva")
+    axes[2].plot(t, df["pwm_cmd"], label="Comando PWM")
     axes[2].set_title("Comparativa de señales de control")
     axes[2].set_xlabel("Tiempo [s]")
     axes[2].set_ylabel("Comando")
@@ -354,26 +378,38 @@ def main() -> None:
         t = df["t_s"].to_numpy(dtype=float)
         fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
 
-        axes[0].plot(t, df["omega_ref_rad_s"], label="omega_ref")
-        axes[0].plot(t, df["omega_meas_rad_s"], label="omega_meas")
-        axes[0].plot(t, df["omega_filt_rad_s"], label="omega_filt")
-        axes[0].plot(t, omega_model, label="omega_model")
+        axes[0].plot(t, df["omega_ref_rad_s"], label="Velocidad de referencia")
+        axes[0].plot(t, df["omega_meas_rad_s"], label="Velocidad medida")
+        axes[0].plot(t, df["omega_filt_rad_s"], label="Velocidad filtrada")
+        axes[0].plot(t, omega_model, label="Velocidad estimada por el modelo")
         axes[0].set_title("Comparativa de velocidades")
         axes[0].set_ylabel("Velocidad [rad/s]")
         axes[0].grid(True)
         axes[0].legend()
 
-        axes[1].plot(t, df["error_rad_s"], label="error_logged")
-        axes[1].plot(t, df["omega_ref_rad_s"] - df["omega_meas_rad_s"], label="ref - meas")
-        axes[1].plot(t, df["omega_ref_rad_s"] - df["omega_filt_rad_s"], label="ref - filt")
-        axes[1].plot(t, omega_model - df["omega_meas_rad_s"], label="model - meas")
+        axes[1].plot(t, df["error_rad_s"], label="Error registrado")
+        axes[1].plot(
+            t,
+            df["omega_ref_rad_s"] - df["omega_meas_rad_s"],
+            label="Error entre referencia y medida",
+        )
+        axes[1].plot(
+            t,
+            df["omega_ref_rad_s"] - df["omega_filt_rad_s"],
+            label="Error entre referencia y velocidad filtrada",
+        )
+        axes[1].plot(
+            t,
+            omega_model - df["omega_meas_rad_s"],
+            label="Error entre modelo y medida",
+        )
         axes[1].set_title("Comparativa de errores")
         axes[1].set_ylabel("Error [rad/s]")
         axes[1].grid(True)
         axes[1].legend()
 
-        axes[2].plot(t, df["u_eff"], label="u_eff")
-        axes[2].plot(t, df["pwm_cmd"], label="pwm_cmd")
+        axes[2].plot(t, df["u_eff"], label="Señal de control efectiva")
+        axes[2].plot(t, df["pwm_cmd"], label="Comando PWM")
         axes[2].set_title("Comparativa de señales de control")
         axes[2].set_xlabel("Tiempo [s]")
         axes[2].set_ylabel("Comando")

@@ -112,9 +112,9 @@ def load_log(path: Path) -> pd.DataFrame:
 
     # Modelo identificado:
     # omega_dot = -a*omega + b*u_eff + c
-    a = 11.11281274
-    b = -165.65653960
-    c = 0.37449236
+    a = 11.25657071
+    b = 167.16911397
+    c = -0.42476213
 
     dt_valid = df["t_s"].diff()
     dt_median = float(dt_valid[dt_valid > 0].median()) if (dt_valid > 0).any() else 0.02

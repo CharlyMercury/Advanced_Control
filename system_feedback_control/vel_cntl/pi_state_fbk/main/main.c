@@ -20,6 +20,9 @@ static const char *TAG = "VEL_PI_STATE";
 #define L298_IN2_GPIO           27
 #define L298_ENA_GPIO           26
 
+#define ENC_SWAP_AB     1
+#define ENC_INVERT_DIR  0
+
 #define ENCODER_CPR_X4          1976
 #define ENCODER_GLITCH_NS       8000
 
@@ -27,14 +30,14 @@ static const char *TAG = "VEL_PI_STATE";
 #define PWM_FREQ_HZ             20000
 
 // Constantes del modelo identificado
-#define MODEL_A                 11.11281274f
-#define MODEL_B               (-165.65653960f)
-#define MODEL_C                 0.37449236f
+#define MODEL_A                 11.25657071f
+#define MODEL_B               (167.16911397f)
+#define MODEL_C                 -0.42476213
 
 // Ganancias del control:
-// u = ( -k1*e + k2*integral(e) + c - a*r ) / b
-#define K1_ERR                  5.0f
-#define K2_INT                  10.0f
+// u = ( k1*e + k2*integral(e) - c + a*r ) / b
+#define K1_ERR                  10.0f
+#define K2_INT                  1.0f
 
 // Referencia
 #define OMEGA_REF_RAD_S         8.0f
@@ -64,7 +67,7 @@ static const char *TAG = "VEL_PI_STATE";
  * - ENCODER_SIGN
  * ========================================================= */
 #define MOTOR_CMD_SIGN          1.0f
-#define ENCODER_SIGN            -1.0f
+#define ENCODER_SIGN            1.0f
 
 // Utilerías
 static inline float clampf(float x, float xmin, float xmax)
@@ -158,10 +161,10 @@ static void velocity_pi_state_task(void *arg)
 
         /* -------------------------------------------------
          * Ley de control:
-         * u = ( -k1*e - k2*integral(e) + c - a*r ) / b
+         * u = ( k1*e + k2*integral(e) - c + a*r ) / b
          * ------------------------------------------------- */
-        v_ff = (MODEL_C - (MODEL_A * omega_ref)) / MODEL_B;
-        v_fb = ((-K1_ERR * e1) + (-K2_INT * e0)) / MODEL_B;
+        v_ff = (-MODEL_C + (MODEL_A * omega_ref)) / MODEL_B;
+        v_fb = ((K1_ERR * e1) + (K2_INT * e0)) / MODEL_B;
 
         u_eff = v_ff + v_fb;
         u_eff = clampf(u_eff, U_EFF_MIN, U_EFF_MAX);
@@ -211,9 +214,11 @@ void app_main(void)
         encoder_init_pcnt_x4(
             ENC_A_GPIO,
             ENC_B_GPIO,
-            ENCODER_GLITCH_NS,
+            8000,
             ENCODER_CPR_X4,
-            TS_MS
+            TS_MS,
+            ENC_SWAP_AB,
+            ENC_INVERT_DIR
         )
     );
 

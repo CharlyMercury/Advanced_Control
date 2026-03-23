@@ -31,9 +31,9 @@ con el modelo identificado del sistema:
 
 En el código actual se usan los parámetros:
 
-* `a = 11.11281274`
-* `b = -165.65653960`
-* `c = 0.37449236`
+* `a = 11.25657071`
+* `b = 167.16911397`
+* `c = -0.42476213`
 * `K = 1.0`
 
 Como el motor presenta **zona muerta** al arranque, la salida del controlador no se manda directo al puente H. Primero se calcula una **entrada efectiva** `u_eff`, y luego se transforma a un **PWM real** compensando el umbral mínimo de activación.

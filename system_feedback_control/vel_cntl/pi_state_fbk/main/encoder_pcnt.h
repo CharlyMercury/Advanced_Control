@@ -1,4 +1,8 @@
+#ifndef ENCODER_PCNT_H
+#define ENCODER_PCNT_H
+
 #include <stdint.h>
+#include <stdbool.h>
 #include "esp_err.h"
 
 typedef struct {
@@ -16,10 +20,14 @@ esp_err_t encoder_init_pcnt_x4(
     int gpio_b,
     uint32_t glitch_ns,
     uint32_t cpr_x4,
-    uint32_t sample_period_ms
+    uint32_t sample_period_ms,
+    bool swap_ab,
+    bool invert_dir
 );
 
 void encoder_get_data(encoder_data_t *out);
 
 int64_t encoder_get_position_cnt(void);
 float encoder_get_rpm(void);
+
+#endif

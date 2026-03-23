@@ -15,12 +15,18 @@
 #define L298_IN1_GPIO           32
 #define L298_IN2_GPIO           27
 #define L298_ENA_GPIO           26
+
+#define ENC_SWAP_AB     1
+#define ENC_INVERT_DIR  0
+
 #define ENCODER_CPR_X4          1976
 #define TS_MS                   20
+
 #define PWM_FREQ_HZ             20000
-#define MODEL_A                 11.11281274f
-#define MODEL_B                (-165.65653960f)
-#define MODEL_C                 0.37449236f
+#define MODEL_A                 11.25657071f
+#define MODEL_B                (167.16911397f)
+#define MODEL_C                 -0.42476213f
+
 #define CTRL_K                  1.0f
 #define OMEGA_REF_RAD_S         8.0f
 #define U_START_POS             0.55f
@@ -28,8 +34,8 @@
 #define OMEGA_LPF_ALPHA         0.85f
 #define OMEGA_STOP_EPS          0.20f
 #define REF_STOP_EPS            0.10f
-#define MOTOR_CMD_SIGN          -1.0f
-#define ENCODER_SIGN            -1.0f
+#define MOTOR_CMD_SIGN          1.0f
+#define ENCODER_SIGN            1.0f
 
 static const char *TAG = "VEL_CTRL";
 
@@ -152,13 +158,16 @@ void app_main(void)
 {
     esp_err_t err;
 
-    err = encoder_init_pcnt_x4(
-        ENC_A_GPIO,
-        ENC_B_GPIO,
-        8000,
-        ENCODER_CPR_X4,
-        TS_MS
-    );
+    err =  encoder_init_pcnt_x4(
+            ENC_A_GPIO,
+            ENC_B_GPIO,
+            8000,
+            ENCODER_CPR_X4,
+            TS_MS,
+            ENC_SWAP_AB,
+            ENC_INVERT_DIR
+        );
+    
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "encoder_init_pcnt_x4 failed: %s", esp_err_to_name(err));
         return;
