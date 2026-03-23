@@ -15,6 +15,9 @@
 #define L298_IN2_GPIO   27
 #define L298_ENA_GPIO   26
 
+#define ENC_SWAP_AB    1
+#define ENC_INVERT_DIR 0
+
 #define ENCODER_CPR_X4  1976
 #define TS_MS           20
 #define PWM_FREQ_HZ     20000
@@ -123,13 +126,18 @@ static void acquire_identification_data_task(void *arg)
 
 void app_main(void)
 {
-    ESP_ERROR_CHECK(encoder_init_pcnt_x4(
-        ENC_A_GPIO,
-        ENC_B_GPIO,
-        8000,
-        ENCODER_CPR_X4,
-        TS_MS
-    ));
+
+    ESP_ERROR_CHECK(
+        encoder_init_pcnt_x4(
+            ENC_A_GPIO,
+            ENC_B_GPIO,
+            8000,
+            ENCODER_CPR_X4,
+            TS_MS,
+            ENC_SWAP_AB,
+            ENC_INVERT_DIR
+        )
+    );
 
     ESP_ERROR_CHECK(motor_l298_init(
         L298_IN1_GPIO,

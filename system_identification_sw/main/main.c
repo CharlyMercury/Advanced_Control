@@ -17,6 +17,9 @@
 #define L298_IN2_GPIO   27
 #define L298_ENA_GPIO   26
 
+#define ENC_SWAP_AB    1
+#define ENC_INVERT_DIR 0
+
 #define ENCODER_CPR_X4  1976
 
 #define TS_MS           20
@@ -191,7 +194,9 @@ void app_main(void)
             ENC_B_GPIO,
             8000,
             ENCODER_CPR_X4,
-            TS_MS
+            TS_MS,
+            ENC_SWAP_AB,
+            ENC_INVERT_DIR
         )
     );
 

@@ -111,6 +111,9 @@ En `main/main.c` están definidos:
 #define L298_IN2_GPIO   27
 #define L298_ENA_GPIO   26
 
+#define ENC_SWAP_AB    1
+#define ENC_INVERT_DIR 0
+
 #define ENCODER_CPR_X4  1976
 #define TS_MS           20
 #define PWM_FREQ_HZ     20000

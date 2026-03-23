@@ -1,5 +1,6 @@
 #include <string.h>
 #include <math.h>
+#include <stdbool.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -18,9 +19,6 @@
 
 static const char *TAG = "ENC";
 
-#define ENC_SWAP_AB    0
-#define ENC_INVERT_DIR 0
-
 typedef struct {
     pcnt_unit_handle_t unit;
     pcnt_channel_handle_t ch_a;
@@ -29,6 +27,9 @@ typedef struct {
 
     uint32_t cpr;
     uint32_t sample_ms;
+
+    bool swap_ab;
+    bool invert_dir;
 
     int64_t total_pos;
 
@@ -84,22 +85,33 @@ static esp_err_t pcnt_qdec_init(enc_ctx_t *q, int gpio_a, int gpio_b, uint32_t g
     pcnt_glitch_filter_config_t flt = { .max_glitch_ns = q->glitch_ns_use };
     ESP_RETURN_ON_ERROR(pcnt_unit_set_glitch_filter(q->unit, &flt), TAG, "set_glitch");
 
-#if ENC_SWAP_AB
-    const int A_EDGE = gpio_b;
-    const int A_LVL  = gpio_a;
-    const int B_EDGE = gpio_a;
-    const int B_LVL  = gpio_b;
-#else
-    const int A_EDGE = gpio_a;
-    const int A_LVL  = gpio_b;
-    const int B_EDGE = gpio_b;
-    const int B_LVL  = gpio_a;
-#endif
+    int a_edge;
+    int a_lvl;
+    int b_edge;
+    int b_lvl;
 
-    pcnt_chan_config_t chA_cfg = { .edge_gpio_num = A_EDGE, .level_gpio_num = A_LVL };
+    if (q->swap_ab) {
+        a_edge = gpio_b;
+        a_lvl  = gpio_a;
+        b_edge = gpio_a;
+        b_lvl  = gpio_b;
+    } else {
+        a_edge = gpio_a;
+        a_lvl  = gpio_b;
+        b_edge = gpio_b;
+        b_lvl  = gpio_a;
+    }
+
+    pcnt_chan_config_t chA_cfg = {
+        .edge_gpio_num = a_edge,
+        .level_gpio_num = a_lvl
+    };
     ESP_RETURN_ON_ERROR(pcnt_new_channel(q->unit, &chA_cfg, &q->ch_a), TAG, "new_ch_a");
 
-    pcnt_chan_config_t chB_cfg = { .edge_gpio_num = B_EDGE, .level_gpio_num = B_LVL };
+    pcnt_chan_config_t chB_cfg = {
+        .edge_gpio_num = b_edge,
+        .level_gpio_num = b_lvl
+    };
     ESP_RETURN_ON_ERROR(pcnt_new_channel(q->unit, &chB_cfg, &q->ch_b), TAG, "new_ch_b");
 
     ESP_RETURN_ON_ERROR(
@@ -149,9 +161,9 @@ static void encoder_task(void *arg)
         int delta = pcnt_get_count(q->unit);
         pcnt_clear(q->unit);
 
-#if ENC_INVERT_DIR
-        delta = -delta;
-#endif
+        if (q->invert_dir) {
+            delta = -delta;
+        }
 
         q->total_pos += (int64_t)delta;
 
@@ -160,7 +172,7 @@ static void encoder_task(void *arg)
         last_us = now_us;
 
         float cps = (dt > 0.0f) ? ((float)delta / dt) : 0.0f;
-        float rps = (q->cpr > 0) ? (cps / (float)q->cpr) : 0.0f;
+        float rps = (q->cpr > 0U) ? (cps / (float)q->cpr) : 0.0f;
 
         float rpm = rps * 60.0f;
         float rad_s = rps * 2.0f * (float)M_PI;
@@ -178,22 +190,42 @@ static void encoder_task(void *arg)
     }
 }
 
-esp_err_t encoder_init_pcnt_x4(int gpio_a, int gpio_b, uint32_t glitch_ns, uint32_t cpr_x4, uint32_t sample_period_ms)
+esp_err_t encoder_init_pcnt_x4(
+    int gpio_a,
+    int gpio_b,
+    uint32_t glitch_ns,
+    uint32_t cpr_x4,
+    uint32_t sample_period_ms,
+    bool swap_ab,
+    bool invert_dir
+)
 {
     memset(&g_enc, 0, sizeof(g_enc));
 
     g_enc.cpr = cpr_x4;
     g_enc.sample_ms = sample_period_ms;
+    g_enc.swap_ab = swap_ab;
+    g_enc.invert_dir = invert_dir;
 
     g_enc.mtx = xSemaphoreCreateMutex();
-    if (!g_enc.mtx) return ESP_ERR_NO_MEM;
+    if (!g_enc.mtx) {
+        return ESP_ERR_NO_MEM;
+    }
 
     ESP_RETURN_ON_ERROR(encoder_gpio_init(gpio_a, gpio_b), TAG, "gpio_init");
     ESP_RETURN_ON_ERROR(pcnt_qdec_init(&g_enc, gpio_a, gpio_b, glitch_ns), TAG, "pcnt_init");
 
-    ESP_LOGI(TAG, "PCNT x4 ready: A=%d B=%d | CPR=%u | Ts=%ums | glitch=%uns (HWmax~%uns)",
-             gpio_a, gpio_b, (unsigned)g_enc.cpr, (unsigned)g_enc.sample_ms,
-             (unsigned)g_enc.glitch_ns_use, (unsigned)pcnt_hw_max_glitch_ns());
+    ESP_LOGI(
+        TAG,
+        "PCNT x4 ready: A=%d B=%d | CPR=%u | Ts=%ums | glitch=%uns | swap_ab=%d | invert_dir=%d",
+        gpio_a,
+        gpio_b,
+        (unsigned)g_enc.cpr,
+        (unsigned)g_enc.sample_ms,
+        (unsigned)g_enc.glitch_ns_use,
+        (int)g_enc.swap_ab,
+        (int)g_enc.invert_dir
+    );
 
     xTaskCreate(encoder_task, "enc_task", 4096, &g_enc, 6, NULL);
     return ESP_OK;
@@ -201,7 +233,9 @@ esp_err_t encoder_init_pcnt_x4(int gpio_a, int gpio_b, uint32_t glitch_ns, uint3
 
 void encoder_get_data(encoder_data_t *out)
 {
-    if (!out) return;
+    if (!out) {
+        return;
+    }
 
     if (xSemaphoreTake(g_enc.mtx, pdMS_TO_TICKS(10)) == pdTRUE) {
         *out = g_enc.data;
